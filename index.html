@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<head>
+	<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+	<link href="/img/favicon.ico" rel="icon" type="image/x-icon" />
+	<title>
+		Generic ThreeJS Template for loading a GLTF
+	</title>
+
+	<!-- include three.js library -->
+	<script src='./js/three.js'></script>
+
+	<!-- include three.js load GLTF -->
+	<script src='./js/GLTFLoader.js'></script> 
+
+
+	<!-- include jsartookit -->
+	<script src="./js/jsartoolkit5/artoolkit.min.js"></script>
+	<script src="./js/jsartoolkit5/artoolkit.api.js"></script>
+
+	<script src="./js/ar-threex.js"></script>
+	<!--Set Base URL for the THEEx Library to reference normally '../' -->
+	<script>THREEx.ArToolkitContext.baseURL = './js/'</script>
+  
+  <!--Orbit Comtrols-->
+  <script src="./js/OrbitControls.js"></script>
+
+</head>
+
+<body style='margin : 0px; overflow: hidden; font-family: Monospace;'>
+
+  <canvas id="canvas"></canvas>
+
+<!--
+  Building a ThreeJS template with plans to extend it to an AR JS template
+  Built using the AR.js and ThreeJS library and documents created by Jerome Etienne: https://github.com/jeromeetienne/AR.js/ and by Lee Stemkoski: https://github.com/stemkoski
+-->
+
+<script>
+ 
+  // Use the classic globally accessible object for important variables
+  const app = {
+    scene: null, // The scene that contains the GLTF object
+    camera: null, // The camera used to view the scene
+    renderer: null, // The renderer used to display the scene
+    gltf: null,  // The GLTF object loaded from the file
+    gltfControls: null,
+    directionalLight: null,
+    gltfPath: 'resources/',
+    gltfFileName: 'icosphere.gltf', //replace with your GLTF file
+    //clock: new THREE.Clock(),
+    ambientLights: {},
+    directionalLights: {},
+    orbitControlsOn: true,
+    orbitControler: null,
+    minFov: 10,
+    maxFov: 60
+  };
+
+  function getBoundingBoxCenter( passedObject ){
+    // Calculate the bounding box of the loaded object
+    const templateBox = new THREE.Box3().setFromObject(passedObject);
+    return templateBox.getCenter(new THREE.Vector3());
+  };
+
+  function initilizeTheOrbitControls(passedObject){
+    //Add on the Orbit Controls so the mouse can control the displayed screen
+    app.orbitControler = new THREE.OrbitControls( app.camera, app.renderer.domElement );
+
+    //set the orbit controls:
+    //orbitControler.addEventListener('change', render); // use if there is no animation loop
+    app.orbitControler.minDistance = 5; // Set the minimum distance for zooming -- AKA, how far you can zoom in; the smaller the number, the closer you can go.
+    app.orbitControler.maxDistance = 100; // Set the maximum distance for zooming -- AKA, how far you can zoom out; the larger the number, the further out you can go.
+    //app.orbitControler.target.set(0, 0, - 0.2); // Set the target point (x,y,z) for the controls
+                                                //The x value is 0, which means the target point is horizontally centered in the scene.
+                                                //The y value is 0, indicating that the target point is vertically centered in the scene.
+                                                //The z value is -0.2, which suggests that the target point is slightly in front of the camera along the negative z-axis.
+    //app.orbitControler.target.copy(app.camera.position); //Copy the starting position of the inital camera to the orbital controls
+    app.orbitControler.target.copy(getBoundingBoxCenter(passedObject)); //Copy the starting position of the inital camera to the orbital controls
+    app.orbitControler.update(); // Update the controls to apply the changes
+  };
+
+
+  // Initialize the 3D scene, camera, and renderer
+  // Set up the Three.js scene
+  function init() {
+    app.scene = new THREE.Scene(); // Create a new scene
+
+    // Create a new camera and hang it off the app Object for easy access
+    // There are four camera types -   PerspectiveCamera, OrthographicCamera, OrthographicCamera, CubeCamera
+    // Perspective is the most useful in this situation.
+    /**
+    * Creates a perspective camera.
+    *
+    * @constructor
+    * @memberOf THREE
+    * @param {number} fov - The vertical field of view angle in degrees.
+    *                     - (Field of View): It is the vertical field of view angle in degrees. It determines the extent of the scene that is visible vertically through the camera.
+    *                       Type: Number (in degrees)
+    *                       Example: fov = 75 (for a 75-degree field of view)
+    * @param {number} aspect - The aspect ratio of the camera's view frustum.
+    *                        - aspect: It is the aspect ratio of the camera's view frustum. It is the ratio of the camera's width to its height. It determines how the scene will be displayed within the camera's viewport.
+    *                          Type: Number (width / height)
+    *                          Example: aspect = window.innerWidth / window.innerHeight (to match the aspect ratio of the window)
+    * @param {number} near - The distance to the near clipping plane of the camera's view frustum.
+    *                      - near: It represents the distance to the near clipping plane of the camera's view frustum. Objects closer to the camera than the near value will be clipped and not visible.
+    *                        Type: Number (positive value)
+    *                        Example: near = 0.1 (for a near clipping plane at a distance of 0.1 units from the camera)
+    * @param {number} far - The distance to the far clipping plane of the camera's view frustum.
+    *                       far: It represents the distance to the far clipping plane of the camera's view frustum. Objects farther away from the camera than the far value will be clipped and not visible.
+    *                       Type: Number (positive value)
+    *                       Example: far = 1000 (for a far clipping plane at a distance of 1000 units from the camera)
+    */
+    app.camera = new THREE.PerspectiveCamera(
+      30, //Field of view: The angle of the camera's field of view in degrees
+      window.innerWidth / window.innerHeight, //Camera Aspect Ratio: The aspect ratio of the camera's view (width / height)
+      0.1, //Near plane: The distances to the near plane of the camera's view frustum
+      1000 //Far plane: The distances to the far plane of the camera's view frustum
+    );
+
+    // Set the camera's initial position so the rendered view will be something other than the ground plane.
+    app.camera.position.z = 5;
+    app.camera.position.y = 2;
+
+    // Create a new WebGL renderer
+    /**
+    * Create the renderer with parameters.
+    *
+    * @type {THREE.WebGLRenderer}
+    * @param {Object} parameters - The configuration parameters for the renderer.
+    * @param {HTMLCanvasElement} parameters.canvas - The canvas element on which the renderer will draw.
+    * @param {WebGLRenderingContext} parameters.context - The WebGL rendering context to be used by the renderer.
+    * @param {boolean} parameters.alpha - Specifies whether the canvas contains an alpha (transparency) channel.
+    * @param {boolean} parameters.antialias - Specifies wheter to enable antialiasing (smoothing of jagged edges)
+    * @param {boolean} parameters.depth - Specifies whether the renderer should use a depth buffer.
+    * @param {boolean} parameters.stencil - Specifies whether the renderer should use a stencil buffer.
+    * @param {boolean} parameters.premultipliedAlpha - Specifies whether the color values are premultiplied by the alpha values.
+    * @param {boolean} parameters.preserveDrawingBuffer - Specifies whether to preserve the buffers until explicitly cleared or overwritten.
+    * @param {('default'|'high-performance'|'low-power')} parameters.powerPreference - Specifies a hint to the browser about the desired GPU performance and power consumption trade-off.
+    *                                             Possible string values are:
+    *                                             - 'default': The browser chooses the appropriate power preference.
+    *                                             - 'high-performance': The application prefers high-performance GPU usage.
+    *                                             - 'low-power': The application prefers lower power consumption.
+    * @param {boolean} parameters.logarithmicDepthBuffer - Specifies whether to use a logarithmic depth buffer.
+    * @param {boolean} parameters.physicallyCorrectLights - Specifies whether to use physically correct lighting.
+    * @param {number} parameters.toneMapping - Specifies the tone mapping algorithm to use.
+    * @param {number} parameters.outputEncoding - Specifies the encoding of the renderer's output.
+    * @returns {THREE.WebGLRenderer} The created WebGL renderer.
+    */
+    app.renderer = new THREE.WebGLRenderer({ 
+
+      canvas: document.getElementById("canvas"), //For simplicity, this template uses the ID "canvas" for the canvas HTML tag.
+      antialias: true // Antialias: Whether to enable antialiasing (smoothing of jagged edges)
+      
+    });
+  
+    // Set the size of the renderer to match the window
+    app.renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Create a new ambient light to provide overall illumination
+    // Parameters:
+    // - color: The color of the light
+    // - intensity: The strength of the light
+    app.ambientLights.amLight1 = new THREE.AmbientLight(0xffffff, 0.5);
+
+    // Add the ambient light to the scene
+    app.scene.add(app.ambientLights.amLight1);
+
+    // Create a new directional light to simulate sunlight
+    // Parameters:
+    // - color: The color of the light
+    // - intensity: The strength of the light
+    app.directionalLights.dirLight1 = new THREE.DirectionalLight(0xffffff, 1);
+    
+    // Set the direction of the light
+    app.directionalLights.dirLight1.position.set(1, 1, 1).normalize();
+
+    // Add the direcyional light to the scene
+    app.scene.add(app.directionalLights.dirLight1);
+
+    //document.body.appendChild( app.renderer.domElement );
+
+    // Create a new GLTF loader instance to load the GLTF file and add it to the scene.
+    const loader = new THREE.GLTFLoader();
+  
+
+    // Load the GLTF file using the GLTF Loader instance
+    /**
+    * Loads a GLTF file.
+    *
+    * @param {string} url - The URL or path to the GLTF file you want to load.
+    *                       Type: string
+    *                       Example: 'path/to/model.gltf'
+    * @param {function} onLoad - A callback function that is executed when the GLTF file is successfully loaded.
+    *    Type: function
+    *    Parameters: gltf - The loaded GLTF object, containing the scene and other data.
+    *    Example:
+    *       function (gltf) {
+    *       // Model loaded successfully
+    *       const model = gltf.scene;
+    *       // ...
+    *       }
+    * @param {function} [onProgress] - An optional callback function that is called while the GLTF file is being loaded, allowing you to track the loading progress.
+    *    Type: function
+    *    Parameters: xhr - The XMLHttpRequest object used for loading.
+    *    Example:
+    *    function (xhr) {
+    *      // Progress callback
+    *      console.log((xhr.loaded / xhr.total) * 100 + '% loaded');
+    *    }
+    * @param {function} [onError] - An optional callback function that is called if an error occurs during the loading process.
+    *    Type: function
+    *    Parameters: error - The error object or error message.
+    *    Example:
+    *        function (error) {
+    *          // Error callback
+    *          console.error('An error occurred while loading the model', error);
+    *        }
+    * 
+    */
+    loader.load(
+      //'resources/SnowpeopleV5.gltf',
+      app.gltfPath + app.gltfFileName,
+      function (gltf) {
+        app.gltf = gltf;
+    
+      // Extract the scene, camera, and animations from the loaded object and store them in the global app object
+      if(gltf.scene){
+        app.gltfScene = gltf.scene;
+        if(app.gltfScene.children[0]){
+            app.gltfControls = app.gltfScene.children[0];
+        }
+      }
+      if(gltf.cameras){
+        if(gltf.cameras[0]){
+          app.camera = gltf.cameras[0];
+        }
+      }
+      if(gltf.animations){
+        app.animations = gltf.animations;
+      }
+      
+      // Set up the animation mixer for the loaded object
+      app.mixer = new THREE.AnimationMixer(app.scene);
+
+      // Add the animations to the mixer
+      for (const animation of app.animations) {
+        app.mixer.clipAction(animation).play();
+      }
+
+      // Add the loaded object to the scene
+      app.scene.add(gltf.scene);
+
+      //If the orbital controls are on, then the camera will need to correctly target this GLTF object. 
+      if(app.orbitControlsOn){ 
+
+        initilizeTheOrbitControls(app.gltfScene); //call the function that activates the orbital controls and pass the gltf for calculating the center
+ 
+      };
+
+    },
+    // Third argument: a callback function that will be called while the file is being loaded
+    function (xhr) {
+      console.log((xhr.loaded / xhr.total * 100) + '% loaded');
+    },
+    // Fourth argument: a callback function that will be called if there is an error during loading
+    function (error) {
+      console.error(error);
+    }
+  );
+
+  
+
+};
+  
+  // Animate the scene and render it to the canvas
+  function animate() {
+
+    requestAnimationFrame(animate);
+
+    if (app.gltf) {
+      // Code to manipulate the loaded GLTF object
+      if(app.gltfControls){
+        app.gltfControls.rotation.y += 0.002; //This is the same as app.gltf.scene.children[0].rotation.y += 0.002;
+      }
+    }
+
+    app.renderer.render(app.scene, app.camera);
+
+  }
+
+  // Call the init function to set up the scene, then start animating
+  init();
+  animate();
+
+  /**
+   * Resizes the renderer and camera to fit the window dimensions.
+   *
+   * @param {THREE.WebGLRenderer} renderer - The Three.js renderer instance.
+   * @param {THREE.PerspectiveCamera} camera - The Three.js camera instance.
+   */
+  function resizeRendererToWindow(renderer, camera) {
+
+    // Update the size of the renderer to match the window dimensions
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    // Update the camera's aspect ratio based on the new window dimensions
+    camera.aspect = window.innerWidth / window.innerHeight;
+
+    // Update the camera's projection matrix to reflect the new aspect ratio
+    camera.updateProjectionMatrix();
+
+  };
+
+    
+  //document.body.appendChild(app.renderer.domElement);
+
+  // Call the resize function initially
+  resizeRendererToWindow(app.renderer, app.camera);
+
+  // Listen for the window resize event
+  window.addEventListener('resize', function() {
+    resizeRendererToWindow(app.renderer, app.camera);
+  });
+ 
+</script>
+
+</body>
+
+
+</html>
